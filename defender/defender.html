@@ -1,0 +1,617 @@
+
+<!DOCTYPE html> 
+<html> 
+<head id="head"> 
+	<title>DEFENDER of the favicon | Mathieu 'p01' Henri | July 2008</title> 
+<style> 
+body
+{
+	padding:2em 0;
+	margin:0 auto;
+	width:54em;
+	max-width:90%;
+	background:#000 url(bg.jpg) center center;
+}
+body,td,th
+{
+	color:#993;
+	text-align:justify;
+	font:normal normal 12px/1.5em Trebuchet ms, sans-serif;
+	text-shadow:0px 2px 2px #000, 0px 1px 1px #000, 0px 1px 0px #000;
+}
+h1
+{
+	margin:0;
+	padding:0;
+	text-align:center;
+	color:#ffc;
+}
+h2
+{
+	margin:0;
+	padding:0;
+	font-size:14px;
+	border-bottom:1px solid #123;
+	font-style:italic;
+	color:#fff;
+}
+p
+{
+	margin:.5em 0 2em 0;
+}
+a
+{
+	text-decoration:none;
+	font-weight:bold;
+	padding:0 .25em;
+	color:#fff;
+}
+kbd
+{
+	color:#ff9;
+	font-weight:bold;
+	text-transform:uppercase;
+}
+#footer
+{
+	margin-top:4em;
+	font-size:.9em;
+	text-align:center;
+}
+#hidden
+{
+	overflow:hidden;
+	position:absolute;
+	left:0;
+	top:-1px;
+	height:1px;
+}
+canvas
+{
+	display:block;
+	visibility:hidden;
+	width:32px;
+	height:32px;
+	border:2px solid #333;
+	padding:2px;
+	margin:4px auto;
+}
+ul
+{
+	margin:2em 0 3em 2em;
+	list-style:outside;
+	padding:0;
+}
+li
+{
+	margin-top:.5em;
+}
+</style> 
+<script src="http://include.reinvigorate.net/re_.js"></script> 
+<script>try{reinvigorate.url_filter=function(url){return url};reinvigorate.track("rvh87-33rn02zx3v");}catch(err){}</script> 
+<script> 
+ 
+function $(id)
+{
+	return document.getElementById(id)
+}
+Function.prototype.bind = function( what )
+{
+	var	_method = this;
+	return function(){ return _method.apply( what, arguments ) };
+}
+ 
+var game = new (function()
+{
+	var x				= 0,
+		y				= 8,
+		shield			= 16,
+		score			= 0,
+		wave			= 0,
+		goLeft			= true,
+		speed			= 0,
+		state			= '',
+		stateBefore		= '',
+		update			= {},
+		now				= 0,
+		then			= 0,
+		keyDown			={},
+		keyUp			={},
+		keyMapping		=
+		{
+			38:	'up',
+			87:	'up',
+			40:	'down',
+			83:	'down',
+			37:	'left',
+			65:	'left',
+			39:	'right',
+			68:	'right',
+			68:	'right',
+			78:	'fire',
+			13:	'select',
+ 
+			0:	'** dummy **'
+		},
+		fireDelay		= 0,
+		fireRate		= 3,
+		enemies			= [],
+		humanoids		= [],
+		warmupDuration	= 1500,
+		frame			= 0,
+		ctx				= null,
+		useIcon			= true,
+		stupidBrowser	= false;
+ 
+	/*
+	 *	initialize
+	 */
+	window.addEventListener
+	(
+		'load',
+		(function(/*onload*/)
+		{
+			// keyboard
+			for( var i in keyMapping )
+			{
+				keyDown[ keyMapping[i] ] = keyUp[ keyMapping[i] ] = 0;
+			}
+			onkeyup = onkeydown = handleKeyEvents.bind(this);
+ 
+			//	blur/focus = pause/resume
+			onblur	= onfocus	= (function(event){ var event = event||window.event; if(state=='play'||state=='pause')setState( event.type.toLowerCase()=='blur'?'pause':stateBefore); }).bind(this);
+ 
+			//	get rendering context
+			ctx	= $('render').getContext('2d');
+			
+			//	is this a stupidBrowser that do not support toDataURL ?
+			if( 'function'!=typeof(ctx.canvas.toDataURL) )
+			{
+				stupidBrowser	= true;
+				ctx.canvas.className = 'stupidBrowser';
+				toggleIconUse();
+			}
+ 
+			//	start with the 'title' state
+			setState( 'title' );
+ 
+			// there we go
+			main();
+		}).bind(this),
+		false
+	);
+ 
+	/*
+	 *	handleKeyEvents
+	 */
+	function handleKeyEvents( event )
+	{
+		var event	= event||window.event,
+			type	= event.type.toLowerCase(),
+			keyCode	= keyMapping[event.keyCode]||'unknown';
+ 
+		keyDown[keyCode]=type=='keydown'?1:0;
+		keyUp[keyCode]=type=='keyup'?1:0;
+		
+		if( keyCode!='unknown' && event.preventDefault )
+		{
+			event.preventDefault();
+		}
+	}
+ 
+	/*
+	 *	toggleIconUse
+	 */
+	function toggleIconUse()
+	{
+		useIcon=!useIcon;
+		ctx.canvas.setAttribute( 'style', 'visibility:'+ (useIcon?'hidden':'visible') );
+		if( !useIcon )
+		{
+			document.getElementById('favicon').setAttribute('href','favicon.png');
+		}
+	}
+ 
+	/*
+	 *	setState
+	 */
+	function setState( newState )
+	{
+		if( 'function'!==typeof(update[newState]) )
+		{
+			throw new Error('state "'+ newState +'" not supported' );
+		}
+		then 		= new Date().getTime();
+		stateBefore	= state;
+		state		= newState;
+	}
+ 
+	/*
+	 *	initializeWave
+	 */
+	function initializeWave( newWave )
+	{
+		wave	= newWave||1;
+		if( wave==1 )
+		{
+			score	= 0;
+		}
+ 
+		//	reset player
+		x		= 0;
+		y		= 8;
+		shield	= 16;
+ 
+		//	enemies
+		enemies = [];
+		var len = wave+10;
+		for( var i=0; i<len; i++ )
+		{
+			enemies[ i ] =
+			{
+				x:Math.random()*255&255,
+				y:-8,
+				type:(i<10?0:(1+(i&1))),	// 10 Landers then it's half Baiter half Bomber
+				isAlive:true
+			};
+		}
+ 
+		//	humanoids
+		for( var i=0; i<10; i++ )
+		{
+			humanoids[ i ] =
+			{
+				x:Math.random()*255&255,
+				y:Math.random()*13&15,
+				isGrabbed:false
+			};
+		}
+ 
+		//	play!
+		setState('play');
+	}
+ 
+	/*
+	 *	update.title
+	 */
+	update.title = function()
+	{
+		ctx.drawImage( $('title'), 0,0, 55,16, Math.round(39*Math.cos((now/1337)%6.283)-16 ),0, 55,16  );
+ 
+		if( keyUp.fire && now>500 )
+		{
+			initializeWave(1);
+		}
+	}
+	/*
+	 *	gameover
+	 */
+	update.gameover = function()
+	{
+		// ...
+		if( now<warmupDuration )
+		{
+			now = warmupDuration-now;
+			update.play();
+ 
+			ctx.globalCompositeOperation	= 'lighter';
+			ctx.fillStyle					= '#f00';
+			ctx.globalAlpha					= now/warmupDuration;
+			ctx.fillRect( 0,0,16,16 );
+			ctx.globalCompositeOperation	= 'source-over';
+			ctx.globalAlpha					= 1;
+ 
+			now = warmupDuration-now;
+		}
+		else
+		{
+			var yOfs = -Math.round(4*Math.sin( ((now-warmupDuration)/241)%6.283 ));
+			ctx.drawImage( $('digits'), 0,(state=='gameover'?10:5),16,5, 0, yOfs+2,16,5 );
+			ctx.globalAlpha= now&256?1:.5;
+			ctx.drawImage( $('digits'), Math.floor(wave/10%10)*5,0,5,5, 2, yOfs+9,5,5 );
+			ctx.drawImage( $('digits'), Math.floor(wave%10)*5,0,5,5, 9, yOfs+9,5,5 );
+			ctx.globalAlpha= 1;
+		}
+ 
+ 
+		if( keyUp.fire && now>2000 )
+		{
+			setState('title');
+		}
+	}
+ 
+	/*
+	 *	update.pause
+	 */
+	update.pause = function()
+	{
+		ctx.drawImage( $('digits'), 0,5,16,5, 0, 2,16,5 );
+ 
+		ctx.globalAlpha= now&256?1:.5;
+		ctx.drawImage( $('digits'), Math.floor(wave/10%10)*5,0,5,5, 2, 9,5,5 );
+		ctx.drawImage( $('digits'), Math.floor(wave%10)*5,0,5,5, 9, 9,5,5 );
+		ctx.globalAlpha= 1;
+	}
+ 
+	/*
+	 *	update.play
+	 */
+	update.play = function()
+	{
+		var isStarting	= now<warmupDuration;
+		var	isTouched	= false;
+		var	yOfs = isStarting?Math.round((stateBefore=='play'?48:32)*Math.cos(Math.PI/2*now/warmupDuration)):0;
+ 
+		if( !isStarting && shield )
+		{
+			// update player's position
+			speed		= Math.max( -3, Math.min( 3, speed-(!speed?0:speed/Math.abs(speed)/4)+keyDown.left-keyDown.right ) );
+			x			= (x+256-Math.round(speed))&255;
+			goLeft		= speed?speed>0:goLeft;
+			y			= Math.max( 0, Math.min( 14, y+keyDown.down-keyDown.up ) );
+		}
+		var	xxPlayer	= Math.round(5+speed*4/3);
+ 
+ 
+		//	draw city
+		ctx.drawImage( $('city'), -((x+16384)&255), yOfs-16 );
+ 
+		//	start transition
+		if( isStarting )
+		{
+			ctx.drawImage( $('digits'), 0,(state=='gameover'?10:5),16,5, 0, yOfs-(state=='gameover'?48:32)+2,16,5 );
+			ctx.globalAlpha= now&256?1:.5;
+			ctx.drawImage( $('digits'), Math.floor(wave/10%10)*5,0,5,5, 2, yOfs-(state=='gameover'?48:32)+9,5,5 );
+			ctx.drawImage( $('digits'), Math.floor(wave%10)*5,0,5,5, 9, yOfs-(state=='gameover'?48:32)+9,5,5 );
+			ctx.globalAlpha= 1;
+		}
+		//	playing
+		else
+		{
+			//	fire
+			if( fireDelay )
+			{
+				fireDelay--;
+			}
+			else if( keyUp.fire && shield )
+			{
+				fireDelay = fireRate;
+				var fireX	= ([0,Math.round(5+speed+3),16]).splice(goLeft?0:1,2);
+ 
+				ctx.fillStyle = (['#ff0','#0f0','#0ff'])[frame%3];
+				ctx.fillRect( fireX[0], y+1, fireX[1]-fireX[0], 1  );
+			}
+ 
+			//	enemies
+			var	enemiesAlive = 0;
+			for( var i=0, enemy; enemy=enemies[i]; i++ )
+			{
+				if( !enemy.isAlive )
+				{
+					continue;
+				}
+ 
+				enemiesAlive++;
+ 
+				var iCanHasThrust = Math.random()*4&3;
+				//	y
+				if( iCanHasThrust==0 )
+				{
+					var s = y-enemy.y+Math.random()*2-1
+					//	landers ?
+					if( !enemy.type )
+					{
+						if( humanoids[i].isGrabbed )
+						{
+							//	abduct humanoid
+							s = -1;
+						}
+						else
+						{
+							s = enemy.x==humanoids[i].x?1:Math.random()-.5;
+						}
+					}
+					if( (s<0 && enemy.y>(enemy.type?0:-5)) || (s>0 && enemy.y<(enemy.type?13:11)) )
+					{
+						enemy.y += s/Math.abs(s);
+						if( !enemy.type )
+						{
+							if( enemy.y==11 && enemy.x==humanoids[i].x && humanoids[i].y==14 )
+							{
+								humanoids[i].isGrabbed = true;
+							}
+							else if( enemy.y==-5 && humanoids[i].isGrabbed )
+							{
+								humanoids[i].y 			= 16;
+								humanoids[i].isGrabbed	= false;
+							}
+						}
+					}
+				}
+				//	x
+				else if( iCanHasThrust==2 )
+				{
+					var s = (enemy.type?x+Math.random()-.5:humanoids[i].x+Math.random()-.5)-enemy.x;
+					if( s )
+					{
+						enemy.x = (enemy.x+256+s/Math.abs(s))&255;
+					}
+				}
+ 
+				//	lander grabbing a humanoid ?
+				if( !enemy.type && humanoids[i].isGrabbed )
+				{
+					humanoids[i].x = enemy.x;
+					humanoids[i].y = enemy.y+3;
+				}
+ 
+				//	draw enemy
+				var xx = (Math.round(256+16+enemy.x-x)&255)-8;
+				ctx.drawImage( $('sprites'), 6*((i+frame)&1),enemy.type*4,4,3, xx-2, Math.round(enemy.y)+yOfs,4,3  );
+ 
+ 
+				//	aligned with the player ?
+				if( shield && Math.abs(enemy.y-y)<(enemy.type?3:2) )
+				{
+					//	shoot ?
+					if( fireDelay==fireRate && xx-2<fireX[1] && xx+2>fireX[0] )
+					{
+						enemy.isAlive = false;
+						if( !enemy.type && humanoids[i].isGrabbed )
+						{
+							humanoids[i].isGrabbed = false;
+						}
+					}
+					//	crash on player ?
+					else if( xx-2+(enemy.type&1)<xxPlayer+5 && xx+2-(enemy.type&1)>xxPlayer )
+					{
+						isTouched = true;
+					}
+				}
+			}
+ 
+			var	lostHumanoids = 0;
+			//	humanoids' "logic"
+			for( var i=0, humanoid; humanoid=humanoids[i]; i++ )
+			{
+				//	abducted ?
+				if( humanoid.y==16 )
+				{
+					humanoid.x = Math.random()*255&255;	// toss the lander around
+					lostHumanoids++;
+				}
+				//	free fall
+				else if( !humanoid.isGrabbed && humanoid.y<14 )
+				{
+					humanoid.y++;
+				}
+			}
+		}
+ 
+ 
+ 
+ 
+		//	draw humanoids
+		for( var i=0, humanoid; humanoid=humanoids[i]; i++ )
+		{
+			var xx = (Math.round(256+16+humanoid.x-x)&255)-8;
+			ctx.drawImage( $('sprites'), 6*((i+frame)&1),12,1,2, xx-(humanoid.isGrabbed?(frame+i)&1:0), Math.round(humanoid.y)+yOfs,1,2  );
+		}
+ 
+		//	draw player
+		if( shield )
+		{
+			ctx.drawImage( $('player'), 0,(goLeft?16:0)+Math.round(Math.abs(speed))*4, 6,4, xxPlayer,y-1+yOfs, 6,4 );
+			if( isTouched )
+			{
+				ctx.globalCompositeOperation	= 'lighter';
+				ctx.fillStyle					= '#f00';
+				ctx.fillRect( 0,0,16,16 );
+				ctx.globalCompositeOperation	= 'source-over';
+				shield--;
+				if( lostHumanoids==10 || !shield )
+				{
+					setState('gameover');
+				}
+			}
+ 
+			//	no more enemies ? -> next wave
+			if( !isStarting && !enemiesAlive )
+			{
+				initializeWave( wave+1 );
+			}
+		}
+ 
+	}
+ 
+	/*
+	 *	main
+	 */
+	function main()
+	{
+		now = new Date().getTime()-then;
+ 
+		//	toggleIconUse ?
+		if( !stupidBrowser && keyUp.select )
+		{
+			toggleIconUse();
+		}
+ 
+		//	clear
+		ctx.globalCompositeOperation = 'source-over';
+		ctx.fillStyle = '#000';
+		ctx.fillRect( 0,0,16,16 );
+ 
+		// actual update
+		if( update[state] )
+		{
+			update[state]();
+		}
+ 
+		// set favicon
+		if( !stupidBrowser && useIcon )
+		{
+			var	icon=$('favicon');
+			(newIcon = icon.cloneNode(true)).setAttribute('href',ctx.canvas.toDataURL());
+			icon.parentNode.replaceChild(newIcon,icon);
+		}
+ 
+		//	reset keyUp
+		for( var i in keyMapping )
+		{
+			keyUp[keyMapping[i]]=0;
+		}
+ 
+		//	update
+		frame++;
+		setTimeout( main.bind( this ), 50 );
+	}
+ 
+})();
+ 
+</script> 
+<link id="favicon" rel="shortcut icon" type="image/png" href="favicon.png" /></head> 
+<body> 
+	<div id="hidden"> 
+		<img id="city" src="city.png" alt="" /> 
+		<img id="player" src="player.png" alt="" /> 
+		<img id="digits" src="digits.png" alt="" /> 
+		<img id="sprites" src="sprites.png" alt="" /> 
+	</div> 
+ 
+	<h1><img id="title" src="title.png" alt="DEFENDER of the favicon" height="48" /><canvas id="render" width="16" height="16">16x16 pixels of thrilling retro shooter action in your favicon.</canvas></h1> 
+ 
+	<h2>DEFENDER of the what ?</h2> 
+ 
+<p><strong>DEFENDER of the favicon</strong> is a JavaScript remake of <a href="http://en.wikipedia.org/wiki/Eugene_Jarvis">Eugene Jarvis</a>' brilliant arcade game <a href="http://www.klov.com/game_detail.php?game_id=7547">Defender</a> written by <a href="/">Mathieu 'p01' Henri</a> and inspired by <a href="http://www.schillmania.com">Scott Schiller</a>'s experiment with <a href="http://schillmania.com/projects/soundmanager2/demo/page-player/xbm-test.html">generated favicons VU meter</a>. The idea was to push the concept of generated favicons further and pack a thrilling retro shooter in 16&times;16 pixels using JavaScript, canvas and data: URIs.</p> 
+ 
+	<h2>Gameplay &amp; Controls</h2> 
+	<p>The menace come from above! Protect the humanoid population from the waves of aliens coming to abduct them. Thankfully the shield of your <strong>Defender</strong> can take a few hit.</p> 
+	<p>Press <kbd>N</kbd> to start a game or shoot, and <kbd>WASD</kbd> or the <kbd>arrow keys</kbd> to move your <strong>Defender</strong> over the humanoid city. If your browser struggles to update the favicon, press <kbd>enter</kbd> to toggle between favicon &amp; canvas display.</p> 
+ 
+	<h2>Behind the scene</h2> 
+	<p><strong>DEFENDER of the favicon</strong> was done in 3 nights, from start to finish. Each frame of the game is generated on the fly in JavaScript into a 16&times;16 canvas element, then converted to a 32bits PNG image and used in place of the favicon. The core of the game act as a state machine. Notice a few details such as the pause when this window is not focused, and the resuming and game over transitions.</p> 
+	<p>The game logic isn't really complex but remains true to the original <strong>Defender</strong> and provides enough action for 16&times;16 pixels. The original game mechanics would make <strong>Defender of the favicon</strong> insanely difficult.  Therefore a few adjustments were done : none of the enemies fire at you,  your <strong>Defender</strong> got upgraded with a shield, and finally the <strong>Landers</strong> do not mutate into unstoppable war machines after abducting a humanoid but wander in your general direction.</p> 
+	
+	<h2>Browser support : the great, the good, the bad &amp; the ugly</h2> 
+	<p>Obviously since this little game makes use of established and working draft web standards, all browsers are not equal. Here is a list of how well the main browsers are able to defend the humanoids.</p> 
+ 
+	<ul> 
+		<li><a href="http://www.opera.com/products/desktop/">Opera 9.5</a>, <a href="http://www.opera.com/download/index.dml?custom=yes">Opera 9.2</a> &amp; <a href="http://www.mozilla.com/en-US/firefox/all-older.html">FireFox 2</a> are all fast and do not flinch one bit.</li> 
+		<li><a href="http://www.mozilla.com/en-US/firefox/">FireFox 3</a> suffers from garbage collection hick up. Prefer the canvas display or another browser.</li> 
+		<li><a href="http://www.apple.com/safari/">Safari 3.1.2</a> does not support toDataURL() and therefore is unable to load the canvas into the favicon.</li> 
+		<li><a href="http://www.microsoft.com/windows/products/winfamily/ie/default.mspx">Internet Explorer</a> is working for the alien invaders. No need to say more.</li> 
+	</ul> 
+ 
+	<h2>What about some karma retribution ?</h2> 
+	<p>You know you want to <a href="http://digg.com/programming/16x16_px_Game_In_Your_Address_Bar_Defender_Of_The_Favicon">Digg</a>, <a href="http://www.reddit.com/info/6rttb/">Reddit</a>, <a href="http://twitturly.com/urlinfo/url/631a35521be82c1d76a9dfcbd060cea3">Twitt(url)y</a>, <a href="http://www.pouet.net/prod.php?which=50946">Pouet</a> this.</p> 
+ 
+	<h2>Last words before blasting off</h2> 
+ 
+	<p>I tried to stay away from my usual size optimizations experiments, but I guess this little game still falls in that category. One day I will make something <b>BIG</b>.</p> 
+ 
+ 
+	<div id="footer"><a href="/">Mathieu 'p01' Henri</a> July 2008</div> 
+ 
+</body> 
+<html>
