@@ -1,0 +1,34 @@
+<html>
+	<head>
+		<title>Favicon test</title>
+		<link id="favicon" rel="shortcut icon" type="image/png" href="favicon.png" />
+		<script type="text/javascript" src="jquery-latest.js"></script>
+		<script type="text/javascript" src="dynfav.js"></script>
+		<script type="text/javascript">
+			var count = 99,ctx;
+			function mainLoop() {
+				count--;
+				
+				clearContext(ctx);
+				ctx.font = 'bold 10px "helvetica", sans-serif';
+			    ctx.fillStyle = '#00FFDD';
+			    cnt = count.toString();
+			    if (cnt.length == 1) cnt = '0' + cnt;
+			    ctx.fillText(cnt, 2, 12);
+			    renderContextToFavicon(ctx);
+			    
+			    if(count != 0) {
+					setTimeout(mainLoop, 1000 );
+				}
+			}
+			$(document).ready(function(){
+				ctx = getFaviconContext();
+				
+				mainLoop();
+			});
+		</script>
+	</head>
+	<body>
+	Favicon stuff!
+	</body>
+</html>
